@@ -94,7 +94,13 @@ for tag_list in tags:
     # processed when processing multiple tag lists.
     page = 1
 
-    while True:
+    # Iterate over the set of result pages returned by e621 and download the
+    # posts on each page. This loop is set to terminate in the event that 750
+    # pages are processed due to how e621 handles pagination for queries that
+    # return more than 750 pages of posts (the pagination strategy changes with
+    # page 751 and the pattern for page numbering at this point hasn't yet been
+    # identified).
+    while True and page < 751:
         # Build the request URL using the current tag list, page number, and
         # page post limit.
         url = "https://e621.net/posts.json?tags={}&page={}&limit={}".format(tag_list, page, limit)
