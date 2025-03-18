@@ -1,0 +1,1 @@
+Replace this with tags that you'd like avoid when downloading, one line per tag.
