@@ -4,14 +4,17 @@ import os
 import sys
 
 # Declare and initialize constants to represent the file paths for tags.txt
-# (tag lists to download against) and files.dat (database of posts that have
-# already been downloaded).
+# (tag lists to download against), blacklist.txt (a list of tags to avoid
+# when downloading posts), and files.dat (database of posts that have already
+# been downloaded).
 TAGS_TXT_FILE_PATH = os.path.join(os.getcwd(), "tags.txt")
+BLACKLIST_TXT_FILE_PATH = os.path.join(os.getcwd(), "blacklist.txt")
 FILES_DAT_FILE_PATH = os.path.join(os.getcwd(), "files.dat")
 
 page = 1
 limit = 75
 tags = []
+blacklist = []
 headers={'User-Agent':"Tag_Downloader"}
 dbappend = []
 
@@ -31,10 +34,35 @@ except:
     input("Press Enter to quit...")
     quit(-1)
 
+# Read the set of blacklisted tags from blacklist.txt. If blacklist.txt does
+# not exist, create it read in the blacklist as an empty list.
+try:
+    f = open(BLACKLIST_TXT_FILE_PATH, 'r')
+    blacklist = f.readlines()
+    f.close()
+
+    if not blacklist:
+        raise ValueError
+except:
+    f = open(BLACKLIST_TXT_FILE_PATH, 'w')
+    f.close()
+    f = open(BLACKLIST_TXT_FILE_PATH, 'r')
+    blacklist = f.readlines()
+    f.close()
+
 # Prepare all tag lists for use in requests against e621 by replacing spaces
 # with URL-encoded space ("%20") and stripping out newlines.
 for index, item in enumerate(tags):
     tags[index] = item.replace(" ", "%20").replace("\n", "")
+
+# Prepare blacklist for use in processing responses from e621 by replacing
+# spaces with URL-encoded space ("%20") and stripping out newlines.
+for index, item in enumerate(blacklist):
+    blacklist[index] = item.replace("\n", "")
+
+# Convert the blacklist list to a set. This will eliminate the need to do this
+# conversion on the fly later.
+blacklist = set(blacklist)
 
 # Open the database of posts that have already been downloaded, or create
 # it if it doesn't already exist.
@@ -98,25 +126,44 @@ for tag_list in tags:
                 print("Post #" + str(jsondata["posts"][i]["id"]) + " already exists!")
                 continue
 
-            # Download the post, reporting details about the post as it's downloaded.
-            print("Downloading post #" + str(jsondata["posts"][i]["id"]) + ".")
-            print(i)
-            print(jsondata["posts"][i]["file"])
-            url = jsondata["posts"][i]["file"]["url"]
-            if not url:
-                md5 = jsondata["posts"][i]["file"]["md5"]
-                url = "https://static1.e621.net/data/"+md5[0:2]+"/"+md5[2:4]+"/"+md5+"."+jsondata["posts"][i]["file"]["ext"]
-            print(url)
-            request=urllib.request.Request(url,None,headers)
+            # Check whether the post's tags include any blacklisted tags. If
+            # the post isn't tagged with one or more blacklisted tags, proceed
+            # to delete it. Otherwise, skip the download and move on to the
+            # next post.
+            if(
+                len(list(blacklist & set(jsondata["posts"][i]["tags"]["general"]))) == 0 and
+                len(list(blacklist & set(jsondata["posts"][i]["tags"]["artist"]))) == 0 and
+                len(list(blacklist & set(jsondata["posts"][i]["tags"]["contributor"]))) == 0 and
+                len(list(blacklist & set(jsondata["posts"][i]["tags"]["copyright"]))) == 0 and
+                len(list(blacklist & set(jsondata["posts"][i]["tags"]["character"]))) == 0 and
+                len(list(blacklist & set(jsondata["posts"][i]["tags"]["species"]))) == 0 and
+                len(list(blacklist & set(jsondata["posts"][i]["tags"]["meta"]))) == 0 and
+                len(list(blacklist & set(jsondata["posts"][i]["tags"]["lore"]))) == 0
+            ):
+                # Download the post, reporting details about the post as it's downloaded.
+                print("Downloading post #" + str(jsondata["posts"][i]["id"]) + ".")
+                print(i)
+                print(jsondata["posts"][i]["file"])
+                url = jsondata["posts"][i]["file"]["url"]
+                if not url:
+                    md5 = jsondata["posts"][i]["file"]["md5"]
+                    url = "https://static1.e621.net/data/"+md5[0:2]+"/"+md5[2:4]+"/"+md5+"."+jsondata["posts"][i]["file"]["ext"]
+                print(url)
+                request=urllib.request.Request(url,None,headers)
 
-            f = open(os.path.join(os.getcwd(), "downloads", str(jsondata["posts"][i]["id"]) + "." + jsondata["posts"][i]["file"]["ext"]), 'wb')
-            f.write(urllib.request.urlopen(request).read())
-            f.close
+                f = open(os.path.join(os.getcwd(), "downloads", str(jsondata["posts"][i]["id"]) + "." + jsondata["posts"][i]["file"]["ext"]), 'wb')
+                f.write(urllib.request.urlopen(request).read())
+                f.close
 
-            # Add the post's identifier to a list of downloaded posts, which
-            # will be added to the database of posts that have already been
-            # downloaded later.
-            dbappend.append(str(jsondata["posts"][i]["id"]))
+                # Add the post's identifier to a list of downloaded posts, which
+                # will be added to the database of posts that have already been
+                # downloaded later.
+                dbappend.append(str(jsondata["posts"][i]["id"]))
+            else:
+                # If the post includes a blacklisted tag, skip the download
+                # step (and move on to the next post).
+                print("Post #" + str(jsondata["posts"][i]["id"]) + " contains one or more blacklisted tags!")
+                continue
 
         # Open the database of posts that have already been downloaded so the
         # set of newly-downloaded posts can be added to it.
